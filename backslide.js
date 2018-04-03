@@ -25,6 +25,8 @@ const MdRelativeURLRegExp = /(!?\[.*?\]\()((?!\/|data:|http:\/\/|https:\/\/|file
 const HtmlRelativeURLRegExp = /(<(?:img|link|script|a)[^>]+(?:src|href)=(?:"|'))((?!\/|data:|http:\/\/|https:\/\/|file:\/\/).[^">]+?)("|')/gm;
 const CssRelativeURLRegExp = /(url\()((?!\/|data:|http:\/\/|https:\/\/|file:\/\/)[^)]+)(\))/gm;
 const MdImagesRegExp = /(!\[.*?\]\()(file:\/\/\/.+?)((?=\)))/gm;
+const MdPosterRegExp = /(poster="(.*?)")/gm;
+const MdMediaRegExp = /<(video|audio) src="(.*?)"/gm;
 const HtmlImagesRegExp = /(<img[^>]+src=(?:"|'))(file:\/\/\/.[^">]+?)("|')/gm;
 const CssImagesRegExp = /(url\()((file:\/\/)[^)]+)(\))/gm;
 const isWindows = /^win/.test(process.platform);
@@ -41,7 +43,8 @@ Commands:
     -o, --output          Output directory                     [default: dist]
     -r, --strip-notes     Strip presenter notes                     
     -h, --handouts        Strip slide fragments for handouts
-    -l, --no-inline       Do not inline external resources          
+    -l, --no-inline       Do not inline external resources
+    -m, --media           Inline video
   s, serve [dir]          Start dev server for specified dir.  [default: .]
     -p, --port            Port number to listen on             [default: 4100]
     -s, --skip-open       Do not open browser on start              
@@ -188,9 +191,10 @@ class BackslideCli {
    * @param {boolean} stripFragments True to strip presention fragments (useful for handouts).
    * @param {boolean} fixRelativePath True to fix relative image paths in markdown
    * @param {boolean} inline True to inline external resources.
+   * @param {boolean} media True to inline external video resources
    * @return Promise<string[]> The exported files.
    */
-  export(output, files, stripNotes, stripFragments, fixRelativePaths, inline) {
+  export(output, files, stripNotes, stripFragments, fixRelativePaths, inline, media) {
     let count = 0;
     let progress;
     const exportedFiles = [];
@@ -198,8 +202,8 @@ class BackslideCli {
     const nextFile = () => promise.then(() => {
       if (count < files.length) {
         const file = files[count++];
-        progress.render({ count: count });        
-        return this._exportFile(output, file, stripNotes, stripFragments, fixRelativePaths, inline)
+        progress.render({ count: count });
+        return this._exportFile(output, file, stripNotes, stripFragments, fixRelativePaths, inline, media)
           .then(exportedFile => exportedFiles.push(exportedFile))
           .then(() => progress.tick({ count: count }))
           .then(nextFile);
@@ -250,7 +254,7 @@ class BackslideCli {
       });
   }
 
-  _exportFile(dir, file, stripNotes, stripFragments, fixRelativePath, inline) {
+  _exportFile(dir, file, stripNotes, stripFragments, fixRelativePath, inline, media) {
     let html, md;
     const filename = path.basename(file, path.extname(file)) + '.html';
     const dirname = path.dirname(path.resolve(file));
@@ -270,9 +274,13 @@ class BackslideCli {
         }
         if (fixRelativePath) {
           md = this._makePathRelativeTo(md, dirname, [MdRelativeURLRegExp, HtmlRelativeURLRegExp, CssRelativeURLRegExp]);
-        }   
-        if (inline) { 
-          md = this._inlineImages(md, [MdImagesRegExp, HtmlImagesRegExp, CssImagesRegExp]);
+        }
+        if (inline) {
+          var imageRegularExpressions = [MdImagesRegExp, HtmlImagesRegExp, CssImagesRegExp, MdPosterRegExp];
+          if (media) {
+            imageRegularExpressions.push(MdMediaRegExp);
+          }
+          md = this._inlineImages(md, imageRegularExpressions);
         }
         html = results[1].toString();
         if (fixRelativePath && !inline) {
@@ -448,7 +456,8 @@ class BackslideCli {
           this._args['strip-notes'],
           this._args.handouts,
           true,
-          !this._args['no-inline']);
+          !this._args['no-inline'],
+          this._args['media']);
       case 'p':
       case 'pdf':
         return this.pdf(this._args.output || 'pdf',
@@ -464,7 +473,7 @@ class BackslideCli {
 }
 
 new BackslideCli(require('minimist')(process.argv.slice(2), {
-  boolean: ['verbose', 'force', 'skip-open', 'strip-notes', 'handouts', 'no-inline'],
+  boolean: ['verbose', 'force', 'skip-open', 'strip-notes', 'handouts', 'no-inline', 'media'],
   string: ['output', 'decktape', 'template'],
   number: ['port', 'wait'],
   alias: {
@@ -476,7 +485,8 @@ new BackslideCli(require('minimist')(process.argv.slice(2), {
     r: 'strip-notes',
     l: 'no-inline',
     t: 'template',
-    h: 'handouts'
+    h: 'handouts',
+    m: 'media'
   },
   '--': true
 }));
